@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="utf-8">
+<title>Scorecard</title>
+<meta name="description" content="">
+<meta name="viewport" content="width=device-width, initial-scale=1,  minimum-scale=1, maximum-scale=1">
+
+<!-- Template CSS -->
+<link rel="stylesheet" href="common/css/app.min.css">
+<style>    
+#content {
+	position: absolute;
+	bottom: 0px;
+	right: 0px;
+	padding: 10px;
+	border-top: 1px solid black;
+	border-left: 1px dotted black;
+	height: 50px;
+}
+</style>
+
+<!-- jQuery and Underscore -->
+<script src="common/js/jQuery2.0.2.min.js"></script>
+<script src="common/js/underscore-1.4.4.min.js"></script>
+
+<!-- Template JS -->
+<script src="common/js/main.min.js"></script>
+
+<!-- Mobile SDK + SObjectData -->
+<script src="common/js/cordova-2.3.0.js"></script>
+<script src="common/js/cordova.force.js"></script>
+<script src="common/js/forcetk.mobilesdk.js"></script>
+<script src="common/js/smartsync.js"></script>
+<script src="common/js/SObjectData.js"></script>
+<script src="common/js/auth.js"></script>
+
+
+<script src="http://birkweinre.herokuapp.com/target/target-script-min.js#anonymous"></script>
+
+<script>
+	var debug_connection = true;
+	var debug_online = true;
+
+    var Scorecard = new SObjectData('Scorecard__c');
+	Scorecard.cacheConfig.cache = new Force.StoreCache("scorecard");
+	Scorecard.cacheConfig.cacheMode = Force.CACHE_MODE.SERVER_FIRST;
+	Scorecard.cacheConfig.pageSize = 1;
+	
+    var User = new SObjectData();
+	User.cacheConfig.cache = new Force.StoreCache("user");
+	User.cacheConfig.cacheMode = Force.CACHE_MODE.SERVER_FIRST;
+	User.cacheConfig.pageSize = 1;
+	
+	var oauth_creds = {};
+	
+	console.debug()
+
+    //called after OAuth
+    function onApplicationReady(creds) {
+		oauth_creds = creds;
+		
+		User.fetch('soql',"SELECT ID, Name, Email from USER where ID = '"+oauth_creds.userId+"'",function() {
+			$('#user_name').html(User.record().Name);
+			$('#user_email').val(User.record().Email);
+			$('#userId').val(User.record().Id);	
+		});
+		
+		
+        console.log('Application Ready');
+        hideAllForms();
+		$('#summary').show();
+		
+		/* create events */
+		$('#summary_menu').click(function() {
+			hideAllForms();
+			$('#summary').show();
+			$(".app-wrapper").toggleClass("menu-open");
+		});
+		
+		$('#social_menu').click(function() {
+			hideAllForms();
+			$('#social').show();
+			$(".app-wrapper").toggleClass("menu-open");
+		});
+		
+		$('#events_menu').click(function() {
+			hideAllForms();
+			$('#events').show();
+			$(".app-wrapper").toggleClass("menu-open");
+		});
+		
+		$('#other_menu').click(function() {
+			hideAllForms();
+			$('#other').show();
+			$(".app-wrapper").toggleClass("menu-open");
+		});
+		
+		$('#future_menu').click(function() {
+			hideAllForms();
+			$('#future').show();
+			$(".app-wrapper").toggleClass("menu-open");
+		});
+		
+		$('#notes_menu').click(function() {
+			hideAllForms();
+			$('#notes').show();
+			$(".app-wrapper").toggleClass("menu-open");
+		});
+		
+		$('#options_menu').click(function() {
+			hideAllForms();
+			$('#options').show();
+		});
+		
+		$('#oauth').click(function() {
+			console.log(oauth_creds);
+		});
+		
+		$('#friday').click(function() {
+			setThisFriday();
+		});
+		
+		$('#submit').click(function() {
+			submitCard();
+		});
+		
+		$('#getLatest').click(function() {
+			getLatestCard();
+		});
+		
+		$('#email').click(function() {
+			emailCard();
+		});
+		
+		$('#connection').click(function() {
+			if(debug_online) {
+				$('#connection').html('Offline');
+				debug_online = false;
+			} else {
+				$('#connection').html('Online');
+				debug_online = true;
+			}
+		});
+		
+		/* fill in user info */
+		
+		
+		/* init cache */
+		User.cacheConfig.cache.init();
+		Scorecard.cacheConfig.cache.init();
+		getLatestCard();
+    }
+    
+	function hideAllForms() {
+		$('#summary').hide();
+		$('#social').hide();
+		$('#events').hide();
+		$('#other').hide();
+		$('#future').hide();
+		$('#notes').hide();
+		$('#options').hide();
+	}
+	
+	function setThisFriday() {
+		$("input[type=text], input[type=date], input[type=hidden],  textarea").val("");
+		
+		$('#user_name').html(User.record().Name);
+		$('#user_email').val(User.record().Email);
+		$('#userId').val(User.record().Id);
+		
+		$('#blogs').val(Scorecard.record().Blog_Posts_New__c);
+		$('#twitter').val(Scorecard.record().Twitter_Followers__c);
+		$('#google').val(Scorecard.record().Google_Circles__c);
+		$('#stackexchange').val(Scorecard.record().SE_Reputation__c);
+		
+		
+		var d = new Date();
+		while(d.getDay() != 5) {
+			d.setDate(d.getDate() + 1);
+		}
+		
+		console.log(d);
+		console.log(d.yyyymmdd());
+		
+		$('#week_ending').val(d.yyyymmdd());
+		
+		hideAllForms();
+		$('#summary').show();
+	}
+	
+	Date.prototype.yyyymmdd = function() {
+	   var yyyy = this.getFullYear().toString();
+	   var mm = (this.getMonth()+1).toString(); // getMonth() is zero-based
+	   var dd  = this.getDate().toString();
+	   return yyyy + "-" + (mm[1]?mm:"0"+mm[0]) + "-" + (dd[1]?dd:"0"+dd[0]); // padding
+	  };
+   
+	function getLatestCard() {
+		Scorecard.dataArray = new Array();
+		Scorecard.dataObject = null;
+		
+		soql = "SELECT ID, Evangelist__c, Week_Ending__c, One_Line_Summary__c, Favorite_of_the_Week__c, Theme__c, Blog_Posts_New__c,";
+		soql += "Twitter_Followers__c, Google_Circles__c, SE_Reputation__c, External_Event_Notes__c, Internal_Event_Notes__c,";
+		soql += "Dreamforce_Activity__c, DUG_Related__c, Special_Ops_Actions_This_Week__c, Code_Notes__c, Planned_Presentations__c, Emerging_Opportunities__c, Status_Report__c";
+		soql += " FROM Scorecard__c WHERE Evangelist__c = '"+oauth_creds.userId+"' ORDER BY CreatedDate DESC Limit 1"
+		
+		Scorecard.fetch("soql",soql,function() {
+			
+			//clear old values
+			$("input[type=text], input[type=date], input[type=hidden],  textarea").val("");
+			
+			$('#recordId').val(Scorecard.record().Id);
+			$('#userId').val(Scorecard.record().Evangelist__c);
+			$('#week_ending').val(Scorecard.record().Week_Ending__c);
+			$('#oneline').val(Scorecard.record().One_Line_Summary__c);
+			$('#theme').val(Scorecard.record().Theme__c);
+			$('#fave').val(Scorecard.record().Favorite_of_the_Week__c);
+			
+			$('#blogs').val(Scorecard.record().Blog_Posts_New__c);
+			$('#twitter').val(Scorecard.record().Twitter_Followers__c);
+			$('#google').val(Scorecard.record().Google_Circles__c);
+			$('#stackexchange').val(Scorecard.record().SE_Reputation__c);
+			
+			$('#external_events').val(Scorecard.record().External_Event_Notes__c);
+			$('#internal_events').val(Scorecard.record().Internal_Event_Notes__c);
+			
+			$('#dreamforce').val(Scorecard.record().Dreamforce_Activity__c);
+			$('#dug_activity').val(Scorecard.record().DUG_Related__c);
+			$('#coding').val(Scorecard.record().Code_Notes__c);
+			$('#specops').val(Scorecard.record().Special_Ops_Actions_This_Week__c);
+			
+			$('#future_events').val(Scorecard.record().Planned_Presentations__c);
+			$('#future_opps').val(Scorecard.record().Emerging_Opportunities__c);
+			
+			$('#notes').val(Scorecard.record().Status_Report__c);
+			
+			hideAllForms();
+			$('#summary').show();
+		});
+		
+		
+	}
+
+
+	function submitCard() {
+		Scorecard.dataArray = new Array();
+		Scorecard.dataObject = null;
+		
+		Scorecard.create({
+			'Evangelist__c' : $('#userId').val(),
+			'Week_Ending__c' : $('#week_ending').val(),
+			'One_Line_Summary__c' : $('#oneline').val(),
+			'Theme__c' : $('#theme').val(),
+			
+			'Blog_Posts_New__c' : $('#blogs').val(),
+			'Twitter_Followers__c' : $('#twitter').val(),
+			'Google_Circles__c' : $('#google').val(),
+			'SE_Reputation__c' : $('#stackexchange').val(),
+			
+			'External_Event_Notes__c' : $('#external_events').val(),
+			'Internal_Event_Notes__c' : $('#internal_events').val(),
+			
+			'Dreamforce_Activity__c' : $('#dreamforce').val(),
+			'DUG_Related__c' : $('#dug_activity').val(),
+			'Code_Notes__c' : $('#coding').val(),
+			
+			'Planned_Presentations__c' : $('#future_events').val(),
+			'Emerging_Opportunities__c' : $('#future_opps').val(),
+			
+			'Status_Report__c' : $('#notes').val()	
+		});
+		
+		console.log('Created?');
+		console.log(Scorecard.record());
+		
+		if($('#recordId').val().length > 0) { //update
+			Scorecard.record().Id = $('#recordId').val();
+			}
+		
+		console.log('Updated?');
+		console.log(Scorecard.record());
+		
+		Scorecard.sync(function() {
+			$('#recordId').val(Scorecard.record().Id);
+			hideAllForms();
+			$('#summary').show();
+		}); 	
+		
+	}
+	
+	
+	function emailCard() {
+		var temp_client = new forcetk.Client(oauth_creds.clientId, oauth_creds.loginUrl, oauth_creds.proxyUrl);
+        temp_client.setSessionToken(oauth_creds.accessToken, '28.0', oauth_creds.instanceUrl);
+        temp_client.setRefreshToken(oauth_creds.refreshToken);
+        temp_client.apexrest('/EmailScorecard/'+Scorecard.record().Id,function(res,mes) {
+			hideAllForms();
+			$('#summary').show();
+			temp_client = null;
+		},Scorecard.errorHandler);
+	}
+    
+</script>
+    
+</head>
+
+<body>
+
+<div class="app-wrapper">
+
+<nav class="main-menu">
+<a href="#" id="summary_menu">Summary</a>
+<a href="#" id="social_menu">Social</a>
+<a href="#" id="events_menu">Events</a>
+<a href="#" id="other_menu">Other</a>
+<a href="#" id="future_menu">Future</a>
+<a href="#" id="notes_menu">Notes</a>
+</nav><!--#main-menu-->
+
+<header>
+            <div id="main-menu-button-left"
+            class="main-menu-button main-menu-button-left">
+                <a class="menu">&nbsp;</a>
+            </div>
+            <div id="main-menu-button-right"
+            class="main-menu-button main-menu-button-right">
+                <a class="gear" id="options_menu">&nbsp;</a>
+            </div>
+            <h1>Scorecard</h1>
+        </header>
+
+<input type="hidden" name="text" id="recordId">
+<div class="app-content">
+<div id="summary">	
+	<section class="border-bottom">
+	         <div class="content">
+	          <h1>Summary</h1> 
+			  <hr />
+			  <h3>Evangelist</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+			    <span  id="user_name"></span>
+	            <input type="hidden" name="text" id="userId">
+				<input type="hidden" name="text" id="user_email">
+	           </div>
+	          </div>
+	
+			  <h3>Week Ending</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <input type="date" name="date" id="week_ending">
+	           </div>
+	          </div>
+	
+			  <h3>Theme</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <select id="theme">
+					<option>Standard</option>
+					<option>Travel - Event</option>
+					<option>Travel - Internal</option>
+					<option>Mixed</option>
+					<option>PTO</option>
+				</select>
+	           </div>
+	          </div>
+	
+			  <h3>One Line Summary</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <input type="text" name="text" id="oneline">
+	           </div>
+	          </div>
+	
+			<h3>Fave of the Week</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <input type="text" name="text" id="fave">
+	           </div>
+	          </div>
+	
+	
+	         </div>
+	</section>
+</div>	
+
+<div id="social">	
+	<section class="border-bottom">
+	         <div class="content">
+	         <h1>Social</h1> 
+				<hr />	
+				<h3>Blog Posts</h3>
+		          <div class="form-control-group">
+		           <div class="form-control form-control-number">
+		            <input type="number" name="text" id="blogs">
+		           </div>
+		          </div>
+
+				  <h3>Twitter</h3>
+		          <div class="form-control-group">
+		           <div class="form-control form-control-number">
+		            <input type="number" name="text" id="twitter">
+		           </div>
+		          </div>
+
+				  <h3>Google+</h3>
+		          <div class="form-control-group">
+		           <div class="form-control form-control-number">
+		            <input type="number" name="text" id="google">
+		           </div>
+		          </div>
+
+				  <h3>Board Posts</h3>
+		          <div class="form-control-group">
+		           <div class="form-control form-control-number">
+		            <input type="number" name="text" id="boards">
+		           </div>
+		          </div>
+		
+				  <h3>StackExchange</h3>
+		          <div class="form-control-group">
+		           <div class="form-control form-control-number">
+		            <input type="number" name="text" id="stackexchange">
+		           </div>
+		          </div>
+	         
+			</div>
+	</section>
+</div>
+
+
+<div id="events">	
+	<section class="border-bottom">
+	         <div class="content">
+	          <h1>Events</h1> 
+			  <hr />	
+			  <h3>External</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="external_events"></textarea>
+	           </div>
+	          </div>
+	
+			  <h3>Internal</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="internal_events"></textarea>
+	           </div>
+	          </div>	
+	
+	         </div>
+	</section>
+</div>
+
+<div id="other">	
+	<section class="border-bottom">
+	         <div class="content">
+	          <h1>Other</h1> 
+			  <hr />	
+			  <h3>Dreamforce</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="dreamforce"></textarea>
+	           </div>
+	          </div>
+	
+			  <h3>DUG Activity</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="dug_activity"></textarea>
+	           </div>
+	          </div>
+	
+			<h3>Coding</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="coding"></textarea>
+	           </div>
+	          </div>
+	
+			<h3>Special Ops</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="specops"></textarea>
+	           </div>
+	          </div>
+	
+	         </div>
+	</section>
+</div>
+
+<div id="future">	
+	<section class="border-bottom">
+	         <div class="content">
+	          <h1>Future</h1> 
+			  <hr />	
+			  <h3>Events/Presentation</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="future_events"></textarea>
+	           </div>
+	          </div>
+	
+			  <h3>Opportunities</h3>
+	          <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="future_opps"></textarea>
+	           </div>
+	          </div>
+	</section>
+</div>
+
+<div id="notes">	
+	<section class="border-bottom">
+	         <div class="content">
+	          <h1>Notes</h1> 
+			  <hr />	
+			  <div class="form-control-group">
+	           <div class="form-control form-control-text">
+	            <textarea id="notes"></textarea>
+	           </div>
+	          </div>
+	</section>
+</div>
+
+<div id="options">	
+	<section class="border-bottom">
+	         <div class="content">
+	          <h1>System</h1> 
+			  <hr />	
+		      <div class="form-control-group">
+			  <section class="data-capture-buttons one-buttons">
+			         <div class="content">
+			             <a href="#" id="getLatest">Latest Card</a>
+			         </div>
+					 <div class="content">
+			             <a href="#" id="friday">New Card</a>
+			         </div>
+			         <div class="content">
+			             <a href="#" id="submit">Save Card</a>
+			         </div>
+					<div class="content">
+			             <a href="#" id="email">Email Card</a>
+			         </div>
+			  </section>
+		
+	</section>
+</div>
+
+<div id="console">
+	<span id="debug"></span>
+</div>
+</div><!--#app-content-->
+</div><!--#app-wrapper-->
+
+</body>
+</html>
